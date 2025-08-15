@@ -52,23 +52,43 @@ const AI_TRANSLATOR = {
     const apiKey = localStorage.getItem("GEMINI_API_KEY");
     if (!apiKey) throw new Error("Set Gemini API key in Settings for AI translation.");
     
-    // First, analyze the text to extract context automatically
-    const analysisPrompt = `Analyze this Chinese novel chapter and extract:
-1. Character names (with gender if mentioned)
-2. Important terms/jargon that need consistent translation
-3. Inside jokes or recurring themes
-4. Novel title (if not in English, translate it)
-
-Return as JSON:
-{
-  "novelTitle": "English title",
-  "characters": [{"name": "English name", "gender": "M/F", "description": "brief description"}],
-  "jargon": [{"term": "Chinese term", "meaning": "English meaning"}],
-  "insideJokes": ["description of recurring jokes/themes"]
-}
-
-Text to analyze:
-${text}`;
+         // First, analyze the text to extract context automatically
+     const analysisPrompt = `Analyze this Chinese novel chapter and extract:
+ 1. Chapter title (if present in the text, usually at the beginning)
+ 2. Character names (with gender if mentioned)
+ 3. Important terms/jargon that need consistent translation
+ 4. Inside jokes or recurring themes
+ 5. Novel title (if not in English, translate it)
+ 
+ IMPORTANT: For Chinese character names, provide both:
+ - English translation (if the name has a meaning)
+ - Pinyin romanization (for pronunciation)
+ - Choose the most appropriate: use English translation if the name has clear meaning, otherwise use pinyin
+ 
+ IMPORTANT: For chapter titles:
+ - Look for patterns like "第 X 章" or standalone titles at the beginning
+ - Extract the actual title text, not the chapter number
+ - If no clear title is found, use null
+ 
+ Return as JSON:
+ {
+   "chapterTitle": "extracted chapter title or null",
+   "novelTitle": "English title",
+   "characters": [
+     {
+       "chineseName": "Chinese characters",
+       "englishName": "English translation or pinyin",
+       "gender": "M/F",
+       "description": "brief description",
+       "nameType": "translation/pinyin"
+     }
+   ],
+   "jargon": [{"term": "Chinese term", "meaning": "English meaning"}],
+   "insideJokes": ["description of recurring jokes/themes"]
+ }
+ 
+ Text to analyze:
+ ${text}`;
 
     try {
              // Step 1: Analyze and extract context
