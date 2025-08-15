@@ -175,7 +175,7 @@ export default function App() {
   const [translationEN, setTranslationEN] = useState("");
   const [notes, setNotes] = useState([]);
   const [glossary, setGlossary] = useState({});
-  const [provider, setProvider] = useState(localStorage.getItem("PROVIDER") || "libre");
+  const [provider, setProvider] = useState(localStorage.getItem("PROVIDER") || "google");
   const [tone, setTone] = useState("match original");
   const [wantNotes, setWantNotes] = useState(true);
   const [status, setStatus] = useState("");
@@ -601,11 +601,11 @@ export default function App() {
                 </div>
                 <div className="text-xs text-gray-400 mt-2">
                   Using: <span className="text-indigo-400 font-medium">{PROVIDERS[provider]?.name}</span>
-                  {provider === 'google' && " (No setup required)"}
-                  {provider === 'deepl' && " (Requires API key in Settings)"}
+                  {provider === 'google' && " (Recommended - No setup required)"}
+                  {provider === 'deepl' && " (Server-side only - Use Google instead)"}
                   {provider === 'openai' && " (Requires API key in Settings)"}
                   {provider === 'hf' && " (Requires API key in Settings)"}
-                  {provider === 'libre' && " (Free demo)"}
+                  {provider === 'libre' && " (May have issues - Use Google instead)"}
                 </div>
               </div>
 
