@@ -122,24 +122,10 @@ const PROVIDERS = {
     },
   },
   deepl: {
-    name: "DeepL (free tier)",
+    name: "DeepL (server-side only)",
     keyName: "DEEPL_API_KEY",
     translate: async ({ text, tone }) => {
-      const apiKey = localStorage.getItem("DEEPL_API_KEY");
-      if (!apiKey) throw new Error("Set DeepL API key in Settings (free tier available).");
-      
-      const formality = tone === 'formal' ? 'more' : tone === 'casual' ? 'less' : 'default';
-      const res = await fetch("https://api-free.deepl.com/v2/translate", {
-        method: "POST",
-        headers: { 
-          "Authorization": `DeepL-Auth-Key ${apiKey}`,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: `text=${encodeURIComponent(text)}&source_lang=ZH&target_lang=EN&formality=${formality}`
-      });
-      if (!res.ok) throw new Error("DeepL error: " + res.status);
-      const data = await res.json();
-      return { english: data.translations?.[0]?.text || "", notes: [] };
+      throw new Error("DeepL requires server-side implementation due to CORS restrictions. Please use Google Translate or OpenAI instead.");
     },
   }
 };
