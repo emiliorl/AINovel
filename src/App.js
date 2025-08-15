@@ -115,22 +115,38 @@ const AI_TRANSLATOR = {
         context = { novelTitle: chapterTitle || "Unknown Novel", characters: [], jargon: [], insideJokes: [] };
       }
 
-      // Step 2: Translate with extracted context
-      const translationPrompt = `You are translating a novel chapter from Chinese to English.
-Maintain the original tone, humor, and literary style.
-Use the provided context to ensure consistent character names and terminology.
-
-Novel Context:
-- Title: ${context.novelTitle}
-- Characters: ${context.characters.map(c => `${c.name} (${c.gender || 'unknown'}) - ${c.description || 'no description'}`).join(', ')}
-- Important Terms: ${context.jargon.map(j => `"${j.term}" = "${j.meaning}"`).join(', ')}
-- Recurring Themes: ${context.insideJokes.join(', ')}
-
-Tone/style: ${tone || 'match original'}
-
-Translate this text into natural, flowing English:
-
-${text}`;
+             // Step 2: Translate with extracted context
+       const translationPrompt = `You are translating a novel chapter from Chinese to English.
+ 
+ IMPORTANT TONE GUIDELINES:
+ - Match the original tone EXACTLY - if it's casual/colloquial, keep it casual
+ - Use natural, conversational English that feels authentic
+ - Avoid overly formal or academic language unless the original is formal
+ - Preserve the character's personality and speech patterns
+ - For casual dialogue, use contractions, slang, and natural expressions
+ - For web novels, maintain that snappy, engaging style
+ 
+ Novel Context:
+ - Title: ${context.novelTitle}
+ - Characters: ${context.characters.map(c => `${c.chineseName} → ${c.englishName} (${c.gender || 'unknown'}) - ${c.description || 'no description'} [${c.nameType || 'unknown'}]`).join(', ')}
+ - Important Terms: ${context.jargon.map(j => `"${j.term}" = "${j.meaning}"`).join(', ')}
+ - Recurring Themes: ${context.insideJokes.join(', ')}
+ 
+ IMPORTANT: When translating character names in the text:
+ - Use the English names provided in the context consistently
+ - If a character appears for the first time, you may include both Chinese and English names briefly
+ - Maintain the same name throughout the chapter
+ 
+ IMPORTANT: Chapter title handling:
+ - If a chapter title was detected (${context.chapterTitle}), REMOVE it from the translation
+ - Start the translation directly with the story content
+ - Do not include chapter numbers or titles in the output
+ 
+ Tone/style: ${tone || 'match original'}
+ 
+ Translate this text into natural, flowing English:
+ 
+ ${text}`;
 
              const translationResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
         method: 'POST',
