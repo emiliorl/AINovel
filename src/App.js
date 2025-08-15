@@ -876,17 +876,62 @@ export default function App() {
                   </div>
                 </section>
 
-                {extractedContext && (
-                  <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
-                    <div className="flex items-center gap-2 mb-3"><Database size={16}/><b>AI Extracted Context</b></div>
-                    <div className="text-sm text-gray-300 space-y-2">
-                      <div><b>Novel Title:</b> {extractedContext.novelTitle}</div>
-                      <div><b>Characters:</b> {extractedContext.characters?.length || 0}</div>
-                      <div><b>Important Terms:</b> {extractedContext.jargon?.length || 0}</div>
-                      <div><b>Recurring Themes:</b> {extractedContext.insideJokes?.length || 0}</div>
-                    </div>
-                  </section>
-                )}
+                                 {extractedContext && (
+                   <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
+                     <div className="flex items-center gap-2 mb-3"><Database size={16}/><b>AI Extracted Context</b></div>
+                     <div className="text-sm text-gray-300 space-y-3">
+                                               <div><b>Novel Title:</b> {extractedContext.novelTitle}</div>
+                        <div><b>Detected Chapter Title:</b> {extractedContext.chapterTitle || 'None detected'}</div>
+                       
+                       <div>
+                         <b>Characters ({extractedContext.characters?.length || 0}):</b>
+                         {extractedContext.characters?.length > 0 ? (
+                           <div className="mt-2 space-y-1">
+                             {extractedContext.characters.map((char, i) => (
+                               <div key={i} className="bg-gray-800 rounded-lg p-2 text-xs">
+                                 <div><b>{char.chineseName}</b> → <span className="text-indigo-300">{char.englishName}</span> ({char.gender || 'unknown'})</div>
+                                 <div className="text-gray-400">{char.description || 'No description'}</div>
+                                 <div className="text-gray-500">Type: {char.nameType || 'unknown'}</div>
+                               </div>
+                             ))}
+                           </div>
+                         ) : (
+                           <span className="text-gray-400"> No characters detected</span>
+                         )}
+                       </div>
+                       
+                       <div>
+                         <b>Important Terms ({extractedContext.jargon?.length || 0}):</b>
+                         {extractedContext.jargon?.length > 0 ? (
+                           <div className="mt-2 space-y-1">
+                             {extractedContext.jargon.map((term, i) => (
+                               <div key={i} className="bg-gray-800 rounded-lg p-2 text-xs">
+                                 <b>{term.term}</b> = {term.meaning}
+                               </div>
+                             ))}
+                           </div>
+                         ) : (
+                           <span className="text-gray-400"> No terms detected</span>
+                         )}
+                       </div>
+                       
+                       <div>
+                         <b>Recurring Themes ({extractedContext.insideJokes?.length || 0}):</b>
+                         {extractedContext.insideJokes?.length > 0 ? (
+                           <div className="mt-2 space-y-1">
+                             {extractedContext.insideJokes.map((joke, i) => (
+                               <div key={i} className="bg-gray-800 rounded-lg p-2 text-xs">
+                                 {joke}
+                               </div>
+                             ))}
+                           </div>
+                         ) : (
+                           <span className="text-gray-400"> No themes detected</span>
+                         )}
+                       </div>
+                     </div>
+                   </section>
+                 )}
 
                 {supabase && (
                   <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4 text-sm text-gray-300">
