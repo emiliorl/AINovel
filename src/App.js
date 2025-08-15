@@ -510,56 +510,140 @@ export default function App() {
     );
   }
 
-  function NovelList(){
-    const [title, setTitle] = useState("");
-    const [pub, setPub] = useState(true);
-    const disabledCreate = !title || !canWrite;
-    return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Input placeholder="New novel title" value={title} onChange={e=>setTitle(e.target.value)} />
-          <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={pub} onChange={e=>setPub(e.target.checked)} /> Public</label>
-          <Button onClick={()=>createNovel(title, pub)} disabled={disabledCreate}><Plus className="inline mr-1" size={16}/> Create</Button>
-        </div>
-        {!canWrite && (
-          <div className="text-xs text-gray-400">To create a novel, configure Supabase and sign in.</div>
-        )}
-        <div className="grid md:grid-cols-2 gap-2">
-          {novels.map(n => (
-            <div key={n.id} className={`rounded-2xl p-3 ring-1 ${activeNovel?.id===n.id? 'ring-indigo-500 bg-gray-900':'ring-gray-800 bg-gray-950'} cursor-pointer`} onClick={()=>setActiveNovel(n)}>
-              <div className="flex items-center justify-between">
-                <div className="font-medium">{n.title}</div>
-                {n.is_public ? <Chip><Globe size={14}/> Public</Chip> : <Chip>Private</Chip>}
-              </div>
-              <div className="text-xs text-gray-400 mt-1">{new Date(n.created_at).toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
+     function NovelList(){
+     const [title, setTitle] = useState("");
+     const [pub, setPub] = useState(true);
+     const [editingNovel, setEditingNovel] = useState(null);
+     const [editTitle, setEditTitle] = useState("");
+     const disabledCreate = !title || !canWrite;
+     
+     const startEdit = (novel) => {
+       setEditingNovel(novel.id);
+       setEditTitle(novel.title);
+     };
+     
+     const saveEdit = async () => {
+       if (editTitle.trim()) {
+         await updateNovelTitle(editingNovel, editTitle.trim());
+         setEditingNovel(null);
+         setEditTitle("");
+       }
+     };
+     
+     const cancelEdit = () => {
+       setEditingNovel(null);
+       setEditTitle("");
+     };
+     
+     return (
+       <div className="space-y-3">
+         <div className="flex items-center gap-2">
+           <Input placeholder="New novel title" value={title} onChange={e=>setTitle(e.target.value)} />
+           <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={pub} onChange={e=>setPub(e.target.checked)} /> Public</label>
+           <Button onClick={()=>createNovel(title, pub)} disabled={disabledCreate}><Plus className="inline mr-1" size={16}/> Create</Button>
+         </div>
+         {!canWrite && (
+           <div className="text-xs text-gray-400">To create a novel, configure Supabase and sign in.</div>
+         )}
+         <div className="grid md:grid-cols-2 gap-2">
+           {novels.map(n => (
+             <div key={n.id} className={`rounded-2xl p-3 ring-1 ${activeNovel?.id===n.id? 'ring-indigo-500 bg-gray-900':'ring-gray-800 bg-gray-950'}`}>
+               {editingNovel === n.id ? (
+                 <div className="space-y-2">
+                   <Input value={editTitle} onChange={e=>setEditTitle(e.target.value)} />
+                   <div className="flex items-center gap-2">
+                     <Button onClick={saveEdit} size="sm">Save</Button>
+                     <GhostButton onClick={cancelEdit} size="sm">Cancel</GhostButton>
+                   </div>
+                 </div>
+               ) : (
+                 <div className="cursor-pointer" onClick={()=>setActiveNovel(n)}>
+                   <div className="flex items-center justify-between">
+                     <div className="font-medium">{n.title}</div>
+                     <div className="flex items-center gap-2">
+                       {n.is_public ? <Chip><Globe size={14}/> Public</Chip> : <Chip>Private</Chip>}
+                       {canWrite && (
+                         <GhostButton 
+                           onClick={(e) => { e.stopPropagation(); startEdit(n); }}
+                           className="text-xs px-2 py-1"
+                         >
+                           Edit
+                         </GhostButton>
+                       )}
+                     </div>
+                   </div>
+                   <div className="text-xs text-gray-400 mt-1">{new Date(n.created_at).toLocaleString()}</div>
+                 </div>
+               )}
+             </div>
+           ))}
+         </div>
+       </div>
+     )
+   }
 
-  function ChapterSidebar(){
-    const [num, setNum] = useState(chapters.length+1);
-    const [title, setTitle] = useState("");
-    useEffect(()=> setNum(chapters.length+1), [chapters.length]);
-    return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Input placeholder="#" type="number" style={{width:90}} value={num} onChange={e=>setNum(parseInt(e.target.value||'0'))} />
-          <Input placeholder="Chapter title" value={title} onChange={e=>setTitle(e.target.value)} />
-          <Button onClick={()=>addChapter(num, title)} disabled={!activeNovel || !canWrite}><Plus className="inline mr-1" size={16}/> Add</Button>
-        </div>
-        <div className="space-y-1 max-h-[60vh] overflow-auto pr-1">
-          {chapters.map(c => (
-            <div key={c.id} className={`rounded-xl px-3 py-2 text-sm cursor-pointer ${activeChapter?.id===c.id? 'bg-indigo-600/20 ring-1 ring-indigo-500':'bg-gray-900 ring-1 ring-gray-800'}`} onClick={()=>setActiveChapter(c)}>
-              <b>Ch {c.number}</b> — {c.title || 'Untitled'}
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
+     function ChapterSidebar(){
+     const [num, setNum] = useState(chapters.length+1);
+     const [title, setTitle] = useState("");
+     const [editingChapter, setEditingChapter] = useState(null);
+     const [editTitle, setEditTitle] = useState("");
+     useEffect(()=> setNum(chapters.length+1), [chapters.length]);
+     
+     const startEdit = (chapter) => {
+       setEditingChapter(chapter.id);
+       setEditTitle(chapter.title || "");
+     };
+     
+     const saveEdit = async () => {
+       if (editTitle.trim()) {
+         await updateChapterTitle(editingChapter, editTitle.trim());
+         setEditingChapter(null);
+         setEditTitle("");
+       }
+     };
+     
+     const cancelEdit = () => {
+       setEditingChapter(null);
+       setEditTitle("");
+     };
+     
+     return (
+       <div className="space-y-3">
+         <div className="flex items-center gap-2">
+           <Input placeholder="#" type="number" style={{width:90}} value={num} onChange={e=>setNum(parseInt(e.target.value||'0'))} />
+           <Input placeholder="Chapter title" value={title} onChange={e=>setTitle(e.target.value)} />
+           <Button onClick={()=>addChapter(num, title)} disabled={!activeNovel || !canWrite}><Plus className="inline mr-1" size={16}/> Add</Button>
+         </div>
+         <div className="space-y-1 max-h-[60vh] overflow-auto pr-1">
+           {chapters.map(c => (
+             <div key={c.id} className={`rounded-xl px-3 py-2 text-sm ${activeChapter?.id===c.id? 'bg-indigo-600/20 ring-1 ring-indigo-500':'bg-gray-900 ring-1 ring-gray-800'}`}>
+               {editingChapter === c.id ? (
+                 <div className="space-y-2">
+                   <Input value={editTitle} onChange={e=>setEditTitle(e.target.value)} placeholder="Chapter title" />
+                   <div className="flex items-center gap-2">
+                     <Button onClick={saveEdit} size="sm" className="text-xs px-2 py-1">Save</Button>
+                     <GhostButton onClick={cancelEdit} size="sm" className="text-xs px-2 py-1">Cancel</GhostButton>
+                   </div>
+                 </div>
+               ) : (
+                 <div className="cursor-pointer flex items-center justify-between" onClick={()=>setActiveChapter(c)}>
+                   <div><b>Ch {c.number}</b> — {c.title || 'Untitled'}</div>
+                   {canWrite && (
+                     <GhostButton 
+                       onClick={(e) => { e.stopPropagation(); startEdit(c); }}
+                       className="text-xs px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                     >
+                       Edit
+                     </GhostButton>
+                   )}
+                 </div>
+               )}
+             </div>
+           ))}
+         </div>
+       </div>
+     )
+   }
 
 
 
