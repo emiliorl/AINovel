@@ -383,10 +383,13 @@ export default function App() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <Label>Provider</Label>
-            <select className="w-full rounded-2xl bg-gray-800 ring-1 ring-gray-700 px-3 py-2" value={provider} onChange={e=>setProvider(e.target.value)}>
+            <Label>Translation Provider</Label>
+            <select className="w-full rounded-2xl bg-gray-800 ring-1 ring-gray-700 px-3 py-2 text-gray-100" value={provider} onChange={e=>setProvider(e.target.value)}>
               {Object.entries(PROVIDERS).map(([k,v])=> <option key={k} value={k}>{v.name}</option>)}
             </select>
+            <div className="mt-2 text-xs text-gray-400">
+              Current: <span className="text-indigo-400">{PROVIDERS[provider]?.name}</span>
+            </div>
           </div>
           <div>
             <Label>OpenAI API key (optional)</Label>
@@ -588,9 +591,18 @@ export default function App() {
           <div className="md:col-span-9 space-y-4">
             <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2"><Sparkles size={16}/><b>Translate</b>{activeNovel && <Chip>{activeNovel.title}</Chip>}{activeChapter && <Chip>Ch {activeChapter.number}</Chip>}</div>
                 <div className="flex items-center gap-2">
-                  <select className="rounded-xl bg-gray-800 ring-1 ring-gray-700 px-2 py-1" value={tone} onChange={e=>setTone(e.target.value)}>
+                  <Sparkles size={16}/>
+                  <b>Translate</b>
+                  <Chip className="bg-indigo-600/20 text-indigo-300">{PROVIDERS[provider]?.name}</Chip>
+                  {activeNovel && <Chip>{activeNovel.title}</Chip>}
+                  {activeChapter && <Chip>Ch {activeChapter.number}</Chip>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <select className="rounded-xl bg-gray-800 ring-1 ring-gray-700 px-2 py-1 text-gray-100" value={provider} onChange={e=>setProvider(e.target.value)}>
+                    {Object.entries(PROVIDERS).map(([k,v])=> <option key={k} value={k}>{v.name}</option>)}
+                  </select>
+                  <select className="rounded-xl bg-gray-800 ring-1 ring-gray-700 px-2 py-1 text-gray-100" value={tone} onChange={e=>setTone(e.target.value)}>
                     <option>match original</option>
                     <option>formal</option>
                     <option>casual</option>
@@ -600,6 +612,14 @@ export default function App() {
                   <label className="text-sm text-gray-300"><input type="checkbox" className="mr-2" checked={wantNotes} onChange={e=>setWantNotes(e.target.checked)} /> Explanatory notes</label>
                   <GhostButton onClick={doTranslate} disabled={!sourceZH}><Sparkles className="inline mr-1" size={16}/> AI Translate</GhostButton>
                   <Button onClick={saveSource} disabled={!activeChapter || !canWrite}><Save className="inline mr-1" size={16}/> Save Source</Button>
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  Using: <span className="text-indigo-400 font-medium">{PROVIDERS[provider]?.name}</span>
+                  {provider === 'google' && " (No setup required)"}
+                  {provider === 'deepl' && " (Requires API key in Settings)"}
+                  {provider === 'openai' && " (Requires API key in Settings)"}
+                  {provider === 'hf' && " (Requires API key in Settings)"}
+                  {provider === 'libre' && " (Free demo)"}
                 </div>
               </div>
 
