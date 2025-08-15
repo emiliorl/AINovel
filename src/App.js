@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { BookOpen, Globe, Plus, LogIn, LogOut, UploadCloud, Sparkles, Settings, Users, Save, FileText, ListChecks, Info, AlertTriangle } from "lucide-react";
+import { BookOpen, Globe, Plus, LogIn, LogOut, UploadCloud, Sparkles, Settings, Users, Save, FileText, Info, AlertTriangle, Database, Eye, Edit3, ChevronLeft, ChevronRight, Type, Moon, Sun, Maximize2, Minimize2 } from "lucide-react";
 
 /**
  * NovelTranslator — a serverless React app (debug-fixed)
@@ -44,114 +44,103 @@ function useSupabase() {
   return { supabase: client, config, setConfig };
 }
 
-// ---------- Simple provider interface ----------
-const PROVIDERS = {
-  openai: {
-    name: "OpenAI (BYO key)",
-    keyName: "OPENAI_API_KEY",
-    translate: async ({ text, glossary, tone, notes, model }) => {
-      const apiKey = localStorage.getItem("OPENAI_API_KEY");
-      if (!apiKey) throw new Error("Set OpenAI API key in Settings.");
-      const body = {
-        model: model || "gpt-4o-mini",
-        messages: [
-          { role: "system", content: `You are a professional CN->EN literary translator. Preserve tone, rhythm, and register. Respect the glossary mappings exactly. Add concise translator notes when jokes, culture-specific idioms, forms of address, or honorifics would be unclear. Output JSON with {"english", "notes"}. Glossary JSON: ${JSON.stringify(glossary||{})}` },
-          { role: "user", content: `Source Chinese chapter:\n\n${text}\n\nDesired tone/style: ${tone || 'match original'}. Include notes: ${notes ? 'yes' : 'only if needed'}.` },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.3,
+// ---------- AI Translation Provider ----------
+const AI_TRANSLATOR = {
+  name: "AI Novel Translator",
+  keyName: "GEMINI_API_KEY",
+  translate: async ({ text, tone, chapterTitle }) => {
+    const apiKey = localStorage.getItem("GEMINI_API_KEY");
+    if (!apiKey) throw new Error("Set Gemini API key in Settings for AI translation.");
+    
+    // First, analyze the text to extract context automatically
+    const analysisPrompt = `Analyze this Chinese novel chapter and extract:
+1. Character names (with gender if mentioned)
+2. Important terms/jargon that need consistent translation
+3. Inside jokes or recurring themes
+4. Novel title (if not in English, translate it)
+
+Return as JSON:
+{
+  "novelTitle": "English title",
+  "characters": [{"name": "English name", "gender": "M/F", "description": "brief description"}],
+  "jargon": [{"term": "Chinese term", "meaning": "English meaning"}],
+  "insideJokes": ["description of recurring jokes/themes"]
+}
+
+Text to analyze:
+${text}`;
+
+    try {
+      // Step 1: Analyze and extract context
+      const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: analysisPrompt }] }],
+          generationConfig: { temperature: 0.1 }
+        })
+      });
+
+      if (!analysisResponse.ok) {
+        throw new Error(`Analysis failed: ${analysisResponse.status}`);
+      }
+
+      const analysisResult = await analysisResponse.json();
+      const analysisText = analysisResult.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      
+      let context;
+      try {
+        context = JSON.parse(analysisText);
+      } catch {
+        context = { novelTitle: chapterTitle || "Unknown Novel", characters: [], jargon: [], insideJokes: [] };
+      }
+
+      // Step 2: Translate with extracted context
+      const translationPrompt = `You are translating a novel chapter from Chinese to English.
+Maintain the original tone, humor, and literary style.
+Use the provided context to ensure consistent character names and terminology.
+
+Novel Context:
+- Title: ${context.novelTitle}
+- Characters: ${context.characters.map(c => `${c.name} (${c.gender || 'unknown'}) - ${c.description || 'no description'}`).join(', ')}
+- Important Terms: ${context.jargon.map(j => `"${j.term}" = "${j.meaning}"`).join(', ')}
+- Recurring Themes: ${context.insideJokes.join(', ')}
+
+Tone/style: ${tone || 'match original'}
+
+Translate this text into natural, flowing English:
+
+${text}`;
+
+      const translationResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: translationPrompt }] }],
+          generationConfig: { temperature: 0.3 }
+        })
+      });
+
+      if (!translationResponse.ok) {
+        throw new Error(`Translation failed: ${translationResponse.status}`);
+      }
+
+      const translationResult = await translationResponse.json();
+      const translatedText = translationResult.candidates?.[0]?.content?.parts?.[0]?.text || text;
+
+      return { 
+        english: translatedText, 
+        notes: [],
+        context: context // Return extracted context for display
       };
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("OpenAI error: " + res.status);
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content || "{}";
-      let parsed = {};
-      try { parsed = JSON.parse(content); } catch { parsed = { english: content, notes: [] }; }
-      return parsed;
-    },
-  },
-  hf: {
-    name: "HuggingFace Inference (BYO key)",
-    keyName: "HF_API_KEY",
-    translate: async ({ text }) => {
-      const apiKey = localStorage.getItem("HF_API_KEY");
-      if (!apiKey) throw new Error("Set HF Inference API key in Settings.");
-      const model = "facebook/nllb-200-distilled-600M";
-      const payload = { inputs: text, parameters: { src_lang: "zho_Hans", tgt_lang: "eng_Latn" } };
-      const res = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("HF error: " + res.status);
-      const out = await res.json();
-      const english = Array.isArray(out) ? out[0]?.translation_text : (out?.translation_text || JSON.stringify(out));
-      return { english, notes: [] };
-    },
-  },
-  libre: {
-    name: "LibreTranslate (free demo)",
-    keyName: null,
-    translate: async ({ text }) => {
-      const endpoint = localStorage.getItem("LT_ENDPOINT") || "https://libretranslate.com/translate";
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ q: text, source: "zh", target: "en", format: "text" })
-      });
-      if (!res.ok) throw new Error("LibreTranslate error: " + res.status);
-      const out = await res.json();
-      return { english: out?.translatedText || "", notes: [] };
-    },
-  },
-  google: {
-    name: "Google Translate (free)",
-    keyName: null,
-    translate: async ({ text, tone }) => {
-      // Using Google Translate's free web API
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh&tl=en&dt=t&q=${encodeURIComponent(text)}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Google Translate error: " + res.status);
-      const data = await res.json();
-      const english = data[0]?.map(item => item[0]).join('') || text;
-      return { english, notes: [] };
-    },
-  },
-  deepl: {
-    name: "DeepL (server-side only)",
-    keyName: "DEEPL_API_KEY",
-    translate: async ({ text, tone }) => {
-      throw new Error("DeepL requires server-side implementation due to CORS restrictions. Please use Google Translate or OpenAI instead.");
-    },
+    } catch (error) {
+      console.error('AI Translation error:', error);
+      throw new Error(`AI Translation failed: ${error.message}`);
+    }
   }
 };
 
-// ---------- Utilities ----------
-function applyGlossaryPreMap(text, glossary) {
-  if (!glossary) return { mapped: text, markers: [] };
-  const markers = [];
-  let mapped = text;
-  Object.entries(glossary).forEach(([zh, en], idx) => {
-    if (!zh || !en) return;
-    const token = `«G${idx}»`;
-    const re = new RegExp(zh.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-    mapped = mapped.replace(re, token);
-    markers.push({ token, zh, en });
-  });
-  return { mapped, markers };
-}
-function restoreGlossary(mappedEnglish, markers) {
-  let out = mappedEnglish;
-  markers.forEach(({ token, en }) => {
-    const re = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-    out = out.replace(re, en);
-  });
-  return out;
-}
+
 
 // ---------- Supabase table helpers ----------
 async function ensureSchema(supabase) {
@@ -174,11 +163,16 @@ export default function App() {
   const [sourceZH, setSourceZH] = useState("");
   const [translationEN, setTranslationEN] = useState("");
   const [notes, setNotes] = useState([]);
-  const [glossary, setGlossary] = useState({});
-  const [provider, setProvider] = useState(localStorage.getItem("PROVIDER") || "google");
   const [tone, setTone] = useState("match original");
-  const [wantNotes, setWantNotes] = useState(true);
   const [status, setStatus] = useState("");
+  const [extractedContext, setExtractedContext] = useState(null);
+
+  // Reading mode state
+  const [isReadingMode, setIsReadingMode] = useState(false);
+  const [fontSize, setFontSize] = useState(16);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [lineHeight, setLineHeight] = useState(1.6);
 
   const isConfigured = !!supabase;
   const canWrite = isConfigured && !!user;
@@ -206,11 +200,6 @@ export default function App() {
     (async () => {
       const { data } = await supabase.from("chapters").select("*").eq("novel_id", activeNovel.id).order("number");
       setChapters(data || []);
-      // load glossary
-      const { data: g } = await supabase.from("glossary").select("term_zh, term_en").eq("novel_id", activeNovel.id);
-      const map = {};
-      (g||[]).forEach(row => map[row.term_zh] = row.term_en);
-      setGlossary(map);
     })();
   }, [supabase, activeNovel]);
 
@@ -230,8 +219,7 @@ export default function App() {
     })();
   }, [supabase, activeChapter]);
 
-  // Provider persistence
-  useEffect(() => { localStorage.setItem("PROVIDER", provider); }, [provider]);
+
 
   async function signIn(email) {
     if (!supabase) { alert("Configure Supabase first in Settings."); return; }
@@ -294,17 +282,17 @@ export default function App() {
 
   async function doTranslate() {
     try {
-      setStatus("Translating...");
-      const providerImpl = PROVIDERS[provider];
-      if (!providerImpl) throw new Error("Choose a provider in Settings.");
-      const { mapped, markers } = applyGlossaryPreMap(sourceZH, glossary);
-      const out = await providerImpl.translate({ text: mapped, glossary, tone, notes: wantNotes });
-      const englishRestored = restoreGlossary(out.english || "", markers);
-      setTranslationEN(englishRestored);
-      const cleanedNotes = Array.isArray(out.notes) ? out.notes : (out.notes ? [out.notes] : []);
-      setNotes(cleanedNotes);
+      setStatus("Analyzing and translating...");
+      const out = await AI_TRANSLATOR.translate({ 
+        text: sourceZH, 
+        tone,
+        chapterTitle: activeChapter?.title
+      });
+      setTranslationEN(out.english);
+      setNotes(out.notes || []);
+      setExtractedContext(out.context);
       // Saving requires DB; guard inside saveTranslation
-      await saveTranslation(englishRestored, cleanedNotes);
+      await saveTranslation(out.english, out.notes);
       setStatus("Done");
     } catch (e) {
       console.error(e);
@@ -312,18 +300,45 @@ export default function App() {
     }
   }
 
-  async function upsertGlossaryRow(zh, en) {
-    if (!supabase) { alert("Configure Supabase first."); return; }
-    if (!activeNovel) { alert("Select a novel first."); return; }
-    if (!user) { alert("Sign in to edit glossary."); return; }
-    const { data: exists } = await supabase.from("glossary").select("id").eq("novel_id", activeNovel.id).eq("term_zh", zh).maybeSingle();
-    if (exists?.id) {
-      await supabase.from("glossary").update({ term_en: en }).eq("id", exists.id);
-    } else {
-      await supabase.from("glossary").insert({ novel_id: activeNovel.id, term_zh: zh, term_en: en });
+  // Reading mode navigation functions
+  function goToNextChapter() {
+    if (!chapters.length) return;
+    const currentIndex = chapters.findIndex(c => c.id === activeChapter?.id);
+    const nextIndex = currentIndex + 1;
+    if (nextIndex < chapters.length) {
+      setActiveChapter(chapters[nextIndex]);
     }
-    setGlossary({ ...glossary, [zh]: en });
   }
+
+  function goToPreviousChapter() {
+    if (!chapters.length) return;
+    const currentIndex = chapters.findIndex(c => c.id === activeChapter?.id);
+    const prevIndex = currentIndex - 1;
+    if (prevIndex >= 0) {
+      setActiveChapter(chapters[prevIndex]);
+    }
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  }
+
+  // Handle fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+
 
   function SetupBanners(){
     if (!isConfigured) {
@@ -346,10 +361,7 @@ export default function App() {
   function SettingsPanel() {
     const [url, setUrl] = useState(config.url);
     const [key, setKey] = useState(config.anonKey);
-    const [openai, setOpenai] = useState(localStorage.getItem("OPENAI_API_KEY") || "");
-    const [hf, setHf] = useState(localStorage.getItem("HF_API_KEY") || "");
-    const [deepl, setDeepl] = useState(localStorage.getItem("DEEPL_API_KEY") || "");
-    const [lt, setLt] = useState(localStorage.getItem("LT_ENDPOINT") || "");
+    const [gemini, setGemini] = useState(localStorage.getItem("GEMINI_API_KEY") || "");
 
     return (
       <div className="space-y-4">
@@ -367,35 +379,16 @@ export default function App() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-4">
           <div>
-            <Label>Translation Provider</Label>
-            <select className="w-full rounded-2xl bg-gray-800 ring-1 ring-gray-700 px-3 py-2 text-gray-100" value={provider} onChange={e=>setProvider(e.target.value)}>
-              {Object.entries(PROVIDERS).map(([k,v])=> <option key={k} value={k}>{v.name}</option>)}
-            </select>
-            <div className="mt-2 text-xs text-gray-400">
-              Current: <span className="text-indigo-400">{PROVIDERS[provider]?.name}</span>
+            <Label>Gemini API Key (Required for AI Translation)</Label>
+            <Input value={gemini} onChange={(e)=>setGemini(e.target.value)} placeholder="Get your API key from Google AI Studio..." />
+            <div className="mt-2">
+              <Button onClick={()=>{ localStorage.setItem("GEMINI_API_KEY", gemini); alert("Saved Gemini key locally"); }}>Save API Key</Button>
             </div>
-          </div>
-          <div>
-            <Label>OpenAI API key (optional)</Label>
-            <Input value={openai} onChange={(e)=>setOpenai(e.target.value)} placeholder="sk-..." />
-            <div className="mt-2"><Button onClick={()=>{ localStorage.setItem("OPENAI_API_KEY", openai); alert("Saved OpenAI key locally"); }}>Save</Button></div>
-          </div>
-          <div>
-            <Label>HF API key (optional)</Label>
-            <Input value={hf} onChange={(e)=>setHf(e.target.value)} placeholder="hf_..." />
-            <div className="mt-2"><Button onClick={()=>{ localStorage.setItem("HF_API_KEY", hf); alert("Saved HF key locally"); }}>Save</Button></div>
-          </div>
-          <div>
-            <Label>DeepL API key (free tier available)</Label>
-            <Input value={deepl} onChange={(e)=>setDeepl(e.target.value)} placeholder="DeepL free API key..." />
-            <div className="mt-2"><Button onClick={()=>{ localStorage.setItem("DEEPL_API_KEY", deepl); alert("Saved DeepL key locally"); }}>Save</Button></div>
-          </div>
-          <div className="md:col-span-3">
-            <Label>LibreTranslate Endpoint (optional override)</Label>
-            <Input value={lt} onChange={(e)=>setLt(e.target.value)} placeholder="https://libretranslate.com/translate" />
-            <div className="mt-2"><Button onClick={()=>{ localStorage.setItem("LT_ENDPOINT", lt); alert("Saved LT endpoint locally"); }}>Save</Button></div>
+            <div className="mt-2 text-xs text-gray-400">
+              Get your free API key from <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Google AI Studio</a>
+            </div>
           </div>
         </div>
 
@@ -500,29 +493,138 @@ export default function App() {
     )
   }
 
-  function Glossary(){
-    const [zh, setZh] = useState("");
-    const [en, setEn] = useState("");
+
+
+  function ReadingMode() {
+    const currentIndex = chapters.findIndex(c => c.id === activeChapter?.id);
+    const hasNext = currentIndex < chapters.length - 1;
+    const hasPrev = currentIndex > 0;
+
     return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Input placeholder="中文名 / term" value={zh} onChange={e=>setZh(e.target.value)} />
-          <Input placeholder="Preferred English" value={en} onChange={e=>setEn(e.target.value)} />
-          <GhostButton onClick={()=>{ upsertGlossaryRow(zh.trim(), en.trim()); setZh(""); setEn(""); }} disabled={!canWrite}><ListChecks className="inline mr-1" size={16}/> Save term</GhostButton>
-        </div>
-        <div className="max-h-[30vh] overflow-auto space-y-1">
-          {Object.entries(glossary).map(([k,v])=> (
-            <div key={k} className="flex items-center justify-between bg-gray-900 ring-1 ring-gray-800 rounded-xl px-3 py-2 text-sm">
-              <div><b className="text-gray-200">{k}</b> → <span className="text-gray-300">{v}</span></div>
-              <div className="flex gap-2">
-                <GhostButton onClick={()=>{ const nv = prompt(`Edit translation for ${k}`, v)||v; upsertGlossaryRow(k, nv); }} disabled={!canWrite}><FileText size={14} className="inline mr-1"/>Edit</GhostButton>
-                <GhostButton onClick={()=>{ if (!isConfigured || !user) { alert("Sign in & configure Supabase to delete."); return; } const g = {...glossary}; delete g[k]; setGlossary(g); supabase.from("glossary").delete().eq("novel_id", activeNovel.id).eq("term_zh", k); }} disabled={!canWrite}>Delete</GhostButton>
+      <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-white text-gray-900'}`}>
+        {/* Reading Controls */}
+        <div className={`sticky top-0 z-50 p-4 border-b transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <GhostButton onClick={() => setIsReadingMode(false)} className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
+                <Edit3 className="inline mr-1" size={16}/> Edit Mode
+              </GhostButton>
+              <div className="text-sm">
+                {activeNovel?.title} - Chapter {activeChapter?.number}: {activeChapter?.title}
               </div>
             </div>
-          ))}
+            
+            <div className="flex items-center gap-2">
+              {/* Font Size */}
+              <div className="flex items-center gap-1">
+                <Type size={16} className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}/>
+                <select 
+                  value={fontSize} 
+                  onChange={(e) => setFontSize(Number(e.target.value))}
+                  className={`rounded px-2 py-1 text-sm ${isDarkMode ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900 border border-gray-300'}`}
+                >
+                  <option value={12}>12px</option>
+                  <option value={14}>14px</option>
+                  <option value={16}>16px</option>
+                  <option value={18}>18px</option>
+                  <option value={20}>20px</option>
+                  <option value={24}>24px</option>
+                  <option value={28}>28px</option>
+                </select>
+              </div>
+
+              {/* Line Height */}
+              <select 
+                value={lineHeight} 
+                onChange={(e) => setLineHeight(Number(e.target.value))}
+                className={`rounded px-2 py-1 text-sm ${isDarkMode ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900 border border-gray-300'}`}
+              >
+                <option value={1.2}>1.2</option>
+                <option value={1.4}>1.4</option>
+                <option value={1.6}>1.6</option>
+                <option value={1.8}>1.8</option>
+                <option value={2.0}>2.0</option>
+              </select>
+
+              {/* Dark Mode Toggle */}
+              <GhostButton onClick={() => setIsDarkMode(!isDarkMode)} className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
+                {isDarkMode ? <Sun size={16}/> : <Moon size={16}/>}
+              </GhostButton>
+
+              {/* Fullscreen Toggle */}
+              <GhostButton onClick={toggleFullscreen} className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
+                {isFullscreen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+              </GhostButton>
+            </div>
+          </div>
+        </div>
+
+        {/* Chapter Navigation */}
+        <div className={`sticky top-16 z-40 p-2 border-b transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <GhostButton 
+              onClick={goToPreviousChapter} 
+              disabled={!hasPrev}
+              className={`${isDarkMode ? 'text-gray-300' : 'text-gray-700'} ${!hasPrev ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <ChevronLeft className="inline mr-1" size={16}/> Previous Chapter
+            </GhostButton>
+            
+            <div className="text-sm">
+              {currentIndex + 1} of {chapters.length} chapters
+            </div>
+            
+            <GhostButton 
+              onClick={goToNextChapter} 
+              disabled={!hasNext}
+              className={`${isDarkMode ? 'text-gray-300' : 'text-gray-700'} ${!hasNext ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Next Chapter <ChevronRight className="inline ml-1" size={16}/>
+            </GhostButton>
+          </div>
+        </div>
+
+        {/* Reading Content */}
+        <div className="max-w-4xl mx-auto p-8">
+          {activeChapter ? (
+            <div>
+              <h1 className={`text-3xl font-bold mb-4 ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                Chapter {activeChapter.number}: {activeChapter.title}
+              </h1>
+              
+              <div 
+                className={`prose max-w-none ${isDarkMode ? 'prose-invert' : ''}`}
+                style={{ 
+                  fontSize: `${fontSize}px`, 
+                  lineHeight: lineHeight,
+                  fontFamily: 'Georgia, serif'
+                }}
+              >
+                {translationEN ? (
+                  <div 
+                    className={`whitespace-pre-wrap ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}
+                    style={{ fontSize: `${fontSize}px`, lineHeight: lineHeight }}
+                  >
+                    {translationEN}
+                  </div>
+                ) : (
+                  <div className={`text-center py-20 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <BookOpen size={48} className="mx-auto mb-4 opacity-50"/>
+                    <p>No translation available for this chapter.</p>
+                    <p className="text-sm mt-2">Switch to Edit Mode to translate this chapter.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className={`text-center py-20 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              <BookOpen size={48} className="mx-auto mb-4 opacity-50"/>
+              <p>Select a chapter to start reading.</p>
+            </div>
+          )}
         </div>
       </div>
-    )
+    );
   }
 
   function SmokeTests(){
@@ -531,13 +633,6 @@ export default function App() {
       const r = [];
       // Test 1: configuration guard reflects into canWrite
       r.push({ name: 'config-guard', pass: isConfigured ? true : !canWrite });
-      // Test 2: glossary roundtrip mapping
-      const sampleText = '張三與李四同行';
-      const glossaryMap = { '張三': 'Zhang San', '李四': 'Li Si' };
-      const { mapped, markers } = applyGlossaryPreMap(sampleText, glossaryMap);
-      const englishMock = mapped.replace('«G0»', 'Zhang San').replace('«G1»', 'Li Si');
-      const restored = restoreGlossary(englishMock, markers);
-      r.push({ name: 'glossary-roundtrip', pass: restored.includes('Zhang San') && restored.includes('Li Si') });
       setResults(r);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isConfigured, canWrite]);
@@ -555,105 +650,106 @@ export default function App() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-        <Header />
-        <SetupBanners />
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          <div className="md:col-span-3 space-y-4">
-            <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
-              <div className="flex items-center gap-2 mb-2"><Users size={16}/><b>Your Novels</b></div>
-              <NovelList/>
-            </section>
-            {activeNovel && (
-              <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
-                <div className="flex items-center gap-2 mb-2"><FileText size={16}/><b>Chapters</b></div>
-                <ChapterSidebar/>
-              </section>
-            )}
-          </div>
-
-          <div className="md:col-span-9 space-y-4">
-            <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={16}/>
-                  <b>Translate</b>
-                  <Chip className="bg-indigo-600/20 text-indigo-300">{PROVIDERS[provider]?.name}</Chip>
-                  {activeNovel && <Chip>{activeNovel.title}</Chip>}
-                  {activeChapter && <Chip>Ch {activeChapter.number}</Chip>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <select className="rounded-xl bg-gray-800 ring-1 ring-gray-700 px-2 py-1 text-gray-100" value={provider} onChange={e=>setProvider(e.target.value)}>
-                    {Object.entries(PROVIDERS).map(([k,v])=> <option key={k} value={k}>{v.name}</option>)}
-                  </select>
-                  <select className="rounded-xl bg-gray-800 ring-1 ring-gray-700 px-2 py-1 text-gray-100" value={tone} onChange={e=>setTone(e.target.value)}>
-                    <option>match original</option>
-                    <option>formal</option>
-                    <option>casual</option>
-                    <option>literary / poetic</option>
-                    <option>snappy / web novel style</option>
-                  </select>
-                  <label className="text-sm text-gray-300"><input type="checkbox" className="mr-2" checked={wantNotes} onChange={e=>setWantNotes(e.target.checked)} /> Explanatory notes</label>
-                  <GhostButton onClick={doTranslate} disabled={!sourceZH}><Sparkles className="inline mr-1" size={16}/> AI Translate</GhostButton>
-                  <Button onClick={saveSource} disabled={!activeChapter || !canWrite}><Save className="inline mr-1" size={16}/> Save Source</Button>
-                </div>
-                <div className="text-xs text-gray-400 mt-2">
-                  Using: <span className="text-indigo-400 font-medium">{PROVIDERS[provider]?.name}</span>
-                  {provider === 'google' && " (Recommended - No setup required)"}
-                  {provider === 'deepl' && " (Server-side only - Use Google instead)"}
-                  {provider === 'openai' && " (Requires API key in Settings)"}
-                  {provider === 'hf' && " (Requires API key in Settings)"}
-                  {provider === 'libre' && " (May have issues - Use Google instead)"}
-                </div>
+    return (
+    <>
+      {isReadingMode ? (
+        <ReadingMode />
+      ) : (
+        <div className="min-h-screen bg-gray-950 text-gray-100">
+          <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+            <Header />
+            <SetupBanners />
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+              <div className="md:col-span-3 space-y-4">
+                <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
+                  <div className="flex items-center gap-2 mb-2"><Users size={16}/><b>Your Novels</b></div>
+                  <NovelList/>
+                </section>
+                {activeNovel && (
+                  <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
+                    <div className="flex items-center gap-2 mb-2"><FileText size={16}/><b>Chapters</b></div>
+                    <ChapterSidebar/>
+                  </section>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <Label>Chinese Source</Label>
-                  <Textarea rows={18} value={sourceZH} onChange={(e)=>setSourceZH(e.target.value)} placeholder="貼上中文章節..."/>
-                </div>
-                <div>
-                  <Label>English Translation</Label>
-                  <Textarea rows={18} value={translationEN} onChange={(e)=>setTranslationEN(e.target.value)} placeholder="AI output will appear here"/>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Button onClick={()=>saveTranslation(translationEN, notes)} disabled={!activeChapter || !canWrite}><UploadCloud className="inline mr-1" size={16}/> Save Translation</Button>
-                    <span className="text-sm text-gray-400">{status}</span>
+              <div className="md:col-span-9 space-y-4">
+                <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16}/>
+                      <b>AI Translation</b>
+                      {activeNovel && <Chip>{activeNovel.title}</Chip>}
+                      {activeChapter && <Chip>Ch {activeChapter.number}</Chip>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select className="rounded-xl bg-gray-800 ring-1 ring-gray-700 px-2 py-1 text-gray-100" value={tone} onChange={e=>setTone(e.target.value)}>
+                        <option>match original</option>
+                        <option>formal</option>
+                        <option>casual</option>
+                        <option>literary / poetic</option>
+                        <option>snappy / web novel style</option>
+                      </select>
+                      <GhostButton onClick={doTranslate} disabled={!sourceZH}><Sparkles className="inline mr-1" size={16}/> AI Translate</GhostButton>
+                      <Button onClick={saveSource} disabled={!activeChapter || !canWrite}><Save className="inline mr-1" size={16}/> Save Source</Button>
+                      {activeChapter && translationEN && (
+                        <GhostButton onClick={() => setIsReadingMode(true)}><Eye className="inline mr-1" size={16}/> Reading Mode</GhostButton>
+                      )}
+                    </div>
                   </div>
-                </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label>Chinese Source</Label>
+                      <Textarea rows={18} value={sourceZH} onChange={(e)=>setSourceZH(e.target.value)} placeholder="貼上中文章節..."/>
+                    </div>
+                    <div>
+                      <Label>English Translation</Label>
+                      <Textarea rows={18} value={translationEN} onChange={(e)=>setTranslationEN(e.target.value)} placeholder="AI output will appear here"/>
+                      <div className="mt-2 flex items-center gap-2">
+                        <Button onClick={()=>saveTranslation(translationEN, notes)} disabled={!activeChapter || !canWrite}><UploadCloud className="inline mr-1" size={16}/> Save Translation</Button>
+                        <span className="text-sm text-gray-400">{status}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <Label>Translator Notes</Label>
+                    <div className="space-y-2">
+                      {(notes||[]).length===0 && <div className="text-sm text-gray-400">No notes for this chapter.</div>}
+                      {(notes||[]).map((n,i)=> (
+                        <div key={i} className="text-sm bg-gray-800 ring-1 ring-gray-700 rounded-xl p-2">{n}</div>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                {extractedContext && (
+                  <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
+                    <div className="flex items-center gap-2 mb-3"><Database size={16}/><b>AI Extracted Context</b></div>
+                    <div className="text-sm text-gray-300 space-y-2">
+                      <div><b>Novel Title:</b> {extractedContext.novelTitle}</div>
+                      <div><b>Characters:</b> {extractedContext.characters?.length || 0}</div>
+                      <div><b>Important Terms:</b> {extractedContext.jargon?.length || 0}</div>
+                      <div><b>Recurring Themes:</b> {extractedContext.insideJokes?.length || 0}</div>
+                    </div>
+                  </section>
+                )}
+
+                {supabase && (
+                  <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4 text-sm text-gray-300">
+                    <div className="flex items-center gap-2 mb-2"><Info size={16}/><b>Database health</b></div>
+                    <DbHealth supabase={supabase} />
+                  </section>
+                )}
+
+                <SmokeTests />
               </div>
-
-              <div className="mt-4">
-                <Label>Translator Notes</Label>
-                <div className="space-y-2">
-                  {(notes||[]).length===0 && <div className="text-sm text-gray-400">No notes for this chapter.</div>}
-                  {(notes||[]).map((n,i)=> (
-                    <div key={i} className="text-sm bg-gray-800 ring-1 ring-gray-700 rounded-xl p-2">{n}</div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {activeNovel && (
-              <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
-                <div className="flex items-center gap-2 mb-2"><ListChecks size={16}/><b>Character Glossary</b></div>
-                <Glossary/>
-              </section>
-            )}
-
-            {supabase && (
-              <section className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4 text-sm text-gray-300">
-                <div className="flex items-center gap-2 mb-2"><Info size={16}/><b>Database health</b></div>
-                <DbHealth supabase={supabase} />
-              </section>
-            )}
-
-            <SmokeTests />
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
