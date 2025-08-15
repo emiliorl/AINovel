@@ -107,6 +107,40 @@ const PROVIDERS = {
       const out = await res.json();
       return { english: out?.translatedText || "", notes: [] };
     },
+  },
+  google: {
+    name: "Google Translate (free)",
+    keyName: null,
+    translate: async ({ text, tone }) => {
+      // Using Google Translate's free web API
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Google Translate error: " + res.status);
+      const data = await res.json();
+      const english = data[0]?.map(item => item[0]).join('') || text;
+      return { english, notes: [] };
+    },
+  },
+  deepl: {
+    name: "DeepL (free tier)",
+    keyName: "DEEPL_API_KEY",
+    translate: async ({ text, tone }) => {
+      const apiKey = localStorage.getItem("DEEPL_API_KEY");
+      if (!apiKey) throw new Error("Set DeepL API key in Settings (free tier available).");
+      
+      const formality = tone === 'formal' ? 'more' : tone === 'casual' ? 'less' : 'default';
+      const res = await fetch("https://api-free.deepl.com/v2/translate", {
+        method: "POST",
+        headers: { 
+          "Authorization": `DeepL-Auth-Key ${apiKey}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: `text=${encodeURIComponent(text)}&source_lang=ZH&target_lang=EN&formality=${formality}`
+      });
+      if (!res.ok) throw new Error("DeepL error: " + res.status);
+      const data = await res.json();
+      return { english: data.translations?.[0]?.text || "", notes: [] };
+    },
   }
 };
 
@@ -328,6 +362,7 @@ export default function App() {
     const [key, setKey] = useState(config.anonKey);
     const [openai, setOpenai] = useState(localStorage.getItem("OPENAI_API_KEY") || "");
     const [hf, setHf] = useState(localStorage.getItem("HF_API_KEY") || "");
+    const [deepl, setDeepl] = useState(localStorage.getItem("DEEPL_API_KEY") || "");
     const [lt, setLt] = useState(localStorage.getItem("LT_ENDPOINT") || "");
 
     return (
@@ -362,6 +397,11 @@ export default function App() {
             <Label>HF API key (optional)</Label>
             <Input value={hf} onChange={(e)=>setHf(e.target.value)} placeholder="hf_..." />
             <div className="mt-2"><Button onClick={()=>{ localStorage.setItem("HF_API_KEY", hf); alert("Saved HF key locally"); }}>Save</Button></div>
+          </div>
+          <div>
+            <Label>DeepL API key (free tier available)</Label>
+            <Input value={deepl} onChange={(e)=>setDeepl(e.target.value)} placeholder="DeepL free API key..." />
+            <div className="mt-2"><Button onClick={()=>{ localStorage.setItem("DEEPL_API_KEY", deepl); alert("Saved DeepL key locally"); }}>Save</Button></div>
           </div>
           <div className="md:col-span-3">
             <Label>LibreTranslate Endpoint (optional override)</Label>
