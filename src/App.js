@@ -300,41 +300,73 @@ export default function App() {
     if (error) alert(error.message); else setStatus("Saved source");
   }
 
-  async function saveTranslation(english, notesArr) {
-    if (!supabase) { alert("Configure Supabase first."); return; }
-    if (!activeChapter) return;
-    if (!user) { alert("Sign in to save."); return; }
-    const payload = { english, notes: notesArr || [] };
-    const { data: existing } = await supabase.from("translations").select("id").eq("chapter_id", activeChapter.id).maybeSingle();
-    if (existing?.id) {
-      const { error } = await supabase.from("translations").update(payload).eq("id", existing.id);
-      if (error) return alert(error.message);
-    } else {
-      const { error } = await supabase.from("translations").insert({ chapter_id: activeChapter.id, ...payload });
-      if (error) return alert(error.message);
-    }
-    setStatus("Saved translation");
-  }
+     async function saveTranslation(english, notesArr) {
+     if (!supabase) { alert("Configure Supabase first."); return; }
+     if (!activeChapter) return;
+     if (!user) { alert("Sign in to save."); return; }
+     const payload = { english, notes: notesArr || [] };
+     const { data: existing } = await supabase.from("translations").select("id").eq("chapter_id", activeChapter.id).maybeSingle();
+     if (existing?.id) {
+       const { error } = await supabase.from("translations").update(payload).eq("id", existing.id);
+       if (error) return alert(error.message);
+     } else {
+       const { error } = await supabase.from("translations").insert({ chapter_id: activeChapter.id, ...payload });
+       if (error) return alert(error.message);
+     }
+     setStatus("Saved translation");
+   }
 
-  async function doTranslate() {
-    try {
-      setStatus("Analyzing and translating...");
-      const out = await AI_TRANSLATOR.translate({ 
-        text: sourceZH, 
-        tone,
-        chapterTitle: activeChapter?.title
-      });
-      setTranslationEN(out.english);
-      setNotes(out.notes || []);
-      setExtractedContext(out.context);
-      // Saving requires DB; guard inside saveTranslation
-      await saveTranslation(out.english, out.notes);
-      setStatus("Done");
-    } catch (e) {
-      console.error(e);
-      setStatus(e.message || "Translation failed");
-    }
-  }
+   async function updateNovelTitle(novelId, newTitle) {
+     if (!supabase) { alert("Configure Supabase first."); return; }
+     if (!user) { alert("Sign in to edit."); return; }
+     const { error } = await supabase.from("novels").update({ title: newTitle }).eq("id", novelId);
+     if (error) return alert(error.message);
+     setNovels(novels.map(n => n.id === novelId ? { ...n, title: newTitle } : n));
+     if (activeNovel?.id === novelId) {
+       setActiveNovel({ ...activeNovel, title: newTitle });
+     }
+     setStatus("Updated novel title");
+   }
+
+   async function updateChapterTitle(chapterId, newTitle) {
+     if (!supabase) { alert("Configure Supabase first."); return; }
+     if (!user) { alert("Sign in to edit."); return; }
+     const { error } = await supabase.from("chapters").update({ title: newTitle }).eq("id", chapterId);
+     if (error) return alert(error.message);
+     setChapters(chapters.map(c => c.id === chapterId ? { ...c, title: newTitle } : c));
+     if (activeChapter?.id === chapterId) {
+       setActiveChapter({ ...activeChapter, title: newTitle });
+     }
+     setStatus("Updated chapter title");
+   }
+
+     async function doTranslate() {
+     try {
+       setStatus("Analyzing and translating...");
+       const out = await AI_TRANSLATOR.translate({ 
+         text: sourceZH, 
+         tone,
+         chapterTitle: activeChapter?.title
+       });
+       setTranslationEN(out.english);
+       setNotes(out.notes || []);
+       setExtractedContext(out.context);
+       
+       // Auto-update chapter title if AI detected one and it's different
+       if (out.context.chapterTitle && 
+           out.context.chapterTitle !== activeChapter?.title && 
+           activeChapter) {
+         await updateChapterTitle(activeChapter.id, out.context.chapterTitle);
+       }
+       
+       // Saving requires DB; guard inside saveTranslation
+       await saveTranslation(out.english, out.notes);
+       setStatus("Done");
+     } catch (e) {
+       console.error(e);
+       setStatus(e.message || "Translation failed");
+     }
+   }
 
   // Reading mode navigation functions
   function goToNextChapter() {
